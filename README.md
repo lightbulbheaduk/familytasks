@@ -8,8 +8,10 @@ Daymark is a local-first progressive web app for managing family tasks, tracking
 - Parent-created child profiles with quick PIN check-in.
 - Family-board view when no profile is checked in.
 - Parent-only task and child-account creation.
-- Ad hoc, recurring, and task-group task types.
-- Start and complete timestamps for assigned tasks.
+- Ad hoc, recurring, and task-group task types with shared group target times.
+- Daily and weekly recurrence schedules with selectable weekdays and intervals.
+- Optional earliest-start times prevent tasks from being started or completed too early.
+- Target completion, start, and complete timestamps for assigned tasks.
 - Minimum-duration tasks, such as brushing teeth for two minutes.
 - Local points, coins, streaks, quests, rewards, and avatar fields ready for future customization.
 - Responsive layout and an offline service worker.

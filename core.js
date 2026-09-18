@@ -52,31 +52,90 @@
   const isParent = (state, profileId = state.activeProfile) => Boolean(profileId && profileId === state.parentId);
   const canManage = (state, profileId = state.activeProfile) => isParent(state, profileId);
   const canComplete = (state, task) => Boolean(state.profiles.some(profile => profile.id === state.activeProfile && profile.id === task.profile));
+  const isTaskAvailable = (task, now = Date.now()) => {
+    if (!task.recurrence || !Number.isFinite(task.targetAt)) return true;
+    const target = new Date(task.targetAt);
+    const current = new Date(now);
+    return target.getFullYear() < current.getFullYear() || (target.getFullYear() === current.getFullYear() && (target.getMonth() < current.getMonth() || (target.getMonth() === current.getMonth() && target.getDate() <= current.getDate())));
+  };
+  const validRecurrence = recurrence => recurrence && ['daily', 'weekly'].includes(recurrence.frequency) && Number.isInteger(recurrence.interval) && recurrence.interval > 0 && Array.isArray(recurrence.daysOfWeek) && recurrence.daysOfWeek.length > 0 && recurrence.daysOfWeek.every(day => Number.isInteger(day) && day >= 0 && day <= 6);
+  const nextTarget = (targetAt, recurrence) => {
+    if (recurrence.frequency === 'daily') return targetAt + recurrence.interval * 86400000;
+    const date = new Date(targetAt);
+    const days = [...recurrence.daysOfWeek].sort((first, second) => first - second);
+    for (let offset = 1; offset <= 7 * recurrence.interval; offset += 1) {
+      const candidate = new Date(targetAt + offset * 86400000);
+      if (days.includes(candidate.getDay())) return candidate.getTime();
+    }
+    return date.getTime() + 7 * recurrence.interval * 86400000;
+  };
 
   const addTask = (state, task) => {
-    if (!canManage(state) || !task.title.trim() || !task.profile) return null;
-    const created = { id: task.id || Date.now(), subtitle: task.subtitle || 'Added today', icon: task.icon || 'home', tag: task.tag || 'Ad hoc', due: task.due || 'Today', completed: false, startedAt: null, min: Number(task.min) || 0, ...task };
+    if (!canManage(state) || !task.title.trim() || !task.profile || !Number.isFinite(task.targetAt) || (task.notBeforeAt != null && (!Number.isFinite(task.notBeforeAt) || task.notBeforeAt > task.targetAt)) || (task.recurrence && !validRecurrence(task.recurrence))) return null;
+    const created = { id: task.id || Date.now(), subtitle: task.subtitle || 'Added today', icon: task.icon || 'home', tag: task.tag || 'Ad hoc', due: task.due || 'Today', targetAt: null, notBeforeAt: null, recurrence: null, completionHistory: [], completed: false, startedAt: null, completedAt: null, min: Number(task.min) || 0, ...task };
     state.tasks.unshift(created);
+    return created;
+  };
+
+  const addTaskGroup = (state, { title, tasks, profile, targetAt, notBeforeAt = null, recurrence = null, min = 0 }) => {
+    if (!canManage(state) || !title.trim() || !profile || !Number.isFinite(targetAt) || (notBeforeAt != null && (!Number.isFinite(notBeforeAt) || notBeforeAt > targetAt)) || !Array.isArray(tasks) || (recurrence && !validRecurrence(recurrence))) return null;
+    const titles = tasks.map(task => task.trim()).filter(Boolean);
+    if (!titles.length) return null;
+    const groupId = `group-${Date.now()}`;
+    const created = titles.map((taskTitle, index) => ({
+      id: `${groupId}-${index}`,
+      title: taskTitle,
+      subtitle: `${title.trim()} routine`,
+      type: 'group',
+      icon: 'home',
+      tag: 'Routine',
+      profile,
+      groupId,
+      groupTitle: title.trim(),
+      targetAt,
+      notBeforeAt,
+      recurrence,
+      completed: false,
+      startedAt: null,
+      completedAt: null,
+      completionHistory: [],
+      min: Number(min) || 0
+    }));
+    state.tasks.unshift(...created);
     return created;
   };
 
   const startTask = (state, taskId) => {
     const task = state.tasks.find(item => item.id === taskId);
-    if (!task || !canComplete(state, task) || task.completed || task.startedAt) return false;
+    if (!task || !canComplete(state, task) || task.completed || task.startedAt || (Number.isFinite(task.notBeforeAt) && Date.now() < task.notBeforeAt)) return false;
     task.startedAt = Date.now();
     return true;
   };
 
   const completeTask = (state, taskId, now = Date.now()) => {
     const task = state.tasks.find(item => item.id === taskId);
-    if (!task || !canComplete(state, task) || task.completed || !task.startedAt || now - task.startedAt < task.min * 60000) return false;
+    if (!task || !canComplete(state, task) || task.completed || !task.startedAt || (Number.isFinite(task.notBeforeAt) && now < task.notBeforeAt) || now - task.startedAt < task.min * 60000) return false;
     task.completed = true;
-    task.startedAt = null;
+    task.completedAt = now;
+    if (task.recurrence) task.completionHistory = [...(task.completionHistory || []), { startedAt: task.startedAt, completedAt: now }];
     const owner = state.profiles.find(profile => profile.id === task.profile);
     owner.points += 20;
     owner.coins += 2;
+    if (task.recurrence) {
+      const group = task.groupId ? state.tasks.filter(item => item.groupId === task.groupId) : [task];
+      if (group.every(item => item.completed)) {
+        const upcomingTarget = nextTarget(task.targetAt, task.recurrence);
+        group.forEach(item => {
+          item.completed = false;
+          item.startedAt = null;
+          item.completedAt = null;
+          item.targetAt = upcomingTarget;
+          if (Number.isFinite(item.notBeforeAt)) item.notBeforeAt = nextTarget(item.notBeforeAt, item.recurrence);
+        });
+      }
+    }
     return true;
   };
 
-  return { hashCredential, createEmptyState, setupParent, addChild, authenticate, logout, isParent, canManage, canComplete, addTask, startTask, completeTask };
+  return { hashCredential, createEmptyState, setupParent, addChild, authenticate, logout, isParent, canManage, canComplete, isTaskAvailable, addTask, addTaskGroup, startTask, completeTask };
 });
