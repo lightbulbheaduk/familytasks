@@ -47,11 +47,18 @@
     state.activeProfile = profileId;
     return true;
   };
+  const authenticateTask = (state, taskId, credential) => {
+    const task = state.tasks.find(item => String(item.id) === String(taskId));
+    const profile = task && state.profiles.find(item => item.id === task.profile);
+    if (!profile) return null;
+    const expected = profile.role === 'Parent profile' ? profile.passwordHash : profile.pinHash;
+    return expected === hashCredential(credential) ? profile.id : null;
+  };
 
   const logout = state => { state.activeProfile = null; };
   const isParent = (state, profileId = state.activeProfile) => Boolean(profileId && profileId === state.parentId);
   const canManage = (state, profileId = state.activeProfile) => isParent(state, profileId);
-  const canComplete = (state, task) => Boolean(state.profiles.some(profile => profile.id === state.activeProfile && profile.id === task.profile));
+  const canComplete = (state, task, profileId = state.activeProfile) => Boolean(state.profiles.some(profile => profile.id === profileId && profile.id === task.profile));
   const isTaskAvailable = (task, now = Date.now()) => {
     if (!task.recurrence || !Number.isFinite(task.targetAt)) return true;
     const target = new Date(task.targetAt);
@@ -79,12 +86,12 @@
 
   const addTaskGroup = (state, { title, tasks, profile, targetAt, notBeforeAt = null, recurrence = null, min = 0 }) => {
     if (!canManage(state) || !title.trim() || !profile || !Number.isFinite(targetAt) || (notBeforeAt != null && (!Number.isFinite(notBeforeAt) || notBeforeAt > targetAt)) || !Array.isArray(tasks) || (recurrence && !validRecurrence(recurrence))) return null;
-    const titles = tasks.map(task => task.trim()).filter(Boolean);
-    if (!titles.length) return null;
+    const entries = tasks.map(task => typeof task === 'string' ? { title: task, min: 0 } : task).filter(task => task && typeof task.title === 'string' && task.title.trim());
+    if (!entries.length) return null;
     const groupId = `group-${Date.now()}`;
-    const created = titles.map((taskTitle, index) => ({
+    const created = entries.map((entry, index) => ({
       id: `${groupId}-${index}`,
-      title: taskTitle,
+      title: entry.title.trim(),
       subtitle: `${title.trim()} routine`,
       type: 'group',
       icon: 'home',
@@ -99,22 +106,22 @@
       startedAt: null,
       completedAt: null,
       completionHistory: [],
-      min: Number(min) || 0
+      min: Number(entry.min ?? min) || 0
     }));
     state.tasks.unshift(...created);
     return created;
   };
 
-  const startTask = (state, taskId) => {
-    const task = state.tasks.find(item => item.id === taskId);
-    if (!task || !canComplete(state, task) || task.completed || task.startedAt || (Number.isFinite(task.notBeforeAt) && Date.now() < task.notBeforeAt)) return false;
+  const startTask = (state, taskId, profileId = state.activeProfile) => {
+    const task = state.tasks.find(item => String(item.id) === String(taskId));
+    if (!task || !canComplete(state, task, profileId) || task.completed || task.startedAt || (Number.isFinite(task.notBeforeAt) && Date.now() < task.notBeforeAt)) return false;
     task.startedAt = Date.now();
     return true;
   };
 
-  const completeTask = (state, taskId, now = Date.now()) => {
-    const task = state.tasks.find(item => item.id === taskId);
-    if (!task || !canComplete(state, task) || task.completed || !task.startedAt || (Number.isFinite(task.notBeforeAt) && now < task.notBeforeAt) || now - task.startedAt < task.min * 60000) return false;
+  const completeTask = (state, taskId, now = Date.now(), profileId = state.activeProfile) => {
+    const task = state.tasks.find(item => String(item.id) === String(taskId));
+    if (!task || !canComplete(state, task, profileId) || task.completed || !task.startedAt || (Number.isFinite(task.notBeforeAt) && now < task.notBeforeAt) || now - task.startedAt < task.min * 60000) return false;
     task.completed = true;
     task.completedAt = now;
     if (task.recurrence) task.completionHistory = [...(task.completionHistory || []), { startedAt: task.startedAt, completedAt: now }];
@@ -137,5 +144,5 @@
     return true;
   };
 
-  return { hashCredential, createEmptyState, setupParent, addChild, authenticate, logout, isParent, canManage, canComplete, isTaskAvailable, addTask, addTaskGroup, startTask, completeTask };
+  return { hashCredential, createEmptyState, setupParent, addChild, authenticate, authenticateTask, logout, isParent, canManage, canComplete, isTaskAvailable, addTask, addTaskGroup, startTask, completeTask };
 });

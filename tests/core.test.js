@@ -86,6 +86,18 @@ test('only the assigned child can start and complete a task', () => {
   assert.equal(state.profiles.find(profile => profile.id === child.id).coins, 2);
 });
 
+test('parent can authenticate a task action without switching profiles', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const task = core.addTask(state, { title: 'Read', profile: child.id, targetAt: Date.now(), min: 0 });
+  const parentId = state.activeProfile;
+  assert.equal(core.authenticateTask(state, String(task.id), '0000'), null);
+  const childId = core.authenticateTask(state, String(task.id), '2468');
+  assert.equal(childId, child.id);
+  assert.equal(core.startTask(state, String(task.id), childId), true);
+  assert.equal(state.activeProfile, parentId);
+});
+
 test('parent can create a task group with one shared target time', () => {
   const state = makeParent();
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
@@ -110,6 +122,13 @@ test('recurring groups advance together after every child task is complete', () 
   tasks.forEach(task => { core.startTask(state, task.id); core.completeTask(state, task.id, task.startedAt); });
   assert.equal(tasks.every(task => !task.completed), true);
   assert.equal(tasks.every(task => task.targetAt === Date.parse('2026-09-25T08:30:00')), true);
+});
+
+test('group tasks can have different minimum durations', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const tasks = core.addTaskGroup(state, { title: 'Morning routine', tasks: [{ title: 'Get dressed', min: 0 }, { title: 'Brush teeth', min: 2 }], profile: child.id, targetAt: Date.now() + 3600000, recurrence: { frequency: 'weekly', interval: 1, daysOfWeek: [5] } });
+  assert.deepEqual(tasks.map(task => task.min), [0, 2]);
 });
 
 test('minimum duration prevents early completion', () => {
