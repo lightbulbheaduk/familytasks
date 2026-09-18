@@ -1,0 +1,13 @@
+{
+  "name": "daymark-family-tasks",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A local-first progressive web app for family tasks and rewards.",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check core.js && node --check app.js && node --check sw.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

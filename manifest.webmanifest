@@ -1,0 +1,9 @@
+{
+  "name": "Daymark | Family tasks",
+  "short_name": "Daymark",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#fbfcf8",
+  "theme_color": "#21302d",
+  "description": "A local-first family task and reward board."
+}

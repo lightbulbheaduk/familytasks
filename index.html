@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f6f7f2">
+  <meta name="description" content="A calm local-first family task and reward board.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+  <title>Daymark | Family tasks</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#dashboard" aria-label="Daymark home">
+        <span class="brand-mark">D</span>
+        <span>daymark</span>
+      </a>
+      <div class="topbar-actions">
+        <span class="save-status"><span class="status-dot"></span> Saved on this device</span>
+        <button class="icon-button" id="settingsButton" title="Open settings" aria-label="Open settings">&#9881;</button>
+        <button class="profile-chip" id="profileButton" aria-label="Open profile switcher">
+          <span class="avatar avatar-small avatar-sage">AM</span><span id="activeProfileLabel">Alex</span><span class="chevron">&#8964;</span>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <section class="welcome-row" id="welcomeRow">
+        <div>
+          <p class="eyebrow" id="dateLabel">TUESDAY, SEPTEMBER 18</p>
+          <h1 id="greeting">Good morning, Alex.</h1>
+          <p class="lede">Small steps make a great day. Here is what is waiting for you.</p>
+        </div>
+        <button class="primary-button" id="addTaskButton"><span class="button-icon">+</span> Add task</button>
+      </section>
+
+      <nav class="tab-nav" id="mainNav" aria-label="Main navigation">
+        <button class="tab active" data-view="dashboard">Today</button>
+        <button class="tab" data-view="tasks">All tasks</button>
+        <button class="tab" data-view="rewards">Rewards</button>
+        <button class="tab" data-view="people">People</button>
+      </nav>
+
+      <div id="appView"></div>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modalBackdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <button class="modal-close" id="modalClose" aria-label="Close">&times;</button>
+      <div id="modalContent"></div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+  <script src="core.js"></script>
+  <script src="app.js"></script>
+  <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');</script>
+</body>
+</html>
