@@ -113,6 +113,27 @@ test('parent can create a task group with one shared target time', () => {
   assert.equal(core.completeTask(state, tasks[0].id, tasks[0].startedAt), true);
 });
 
+test('daily recurring groups do not require selected weekdays', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const targetAt = Date.parse('2026-09-18T08:30:00');
+  const tasks = core.addTaskGroup(state, {
+    title: 'Morning routine',
+    tasks: ['Get dressed', 'Brush teeth'],
+    profile: child.id,
+    targetAt,
+    recurrence: { frequency: 'daily', interval: 1, daysOfWeek: [] }
+  });
+
+  assert.equal(tasks.length, 2);
+  core.authenticate(state, child.id, '2468');
+  tasks.forEach(task => {
+    core.startTask(state, task.id);
+    core.completeTask(state, task.id, task.startedAt);
+  });
+  assert.equal(tasks.every(task => task.targetAt === targetAt + 86400000), true);
+});
+
 test('recurring groups advance together after every child task is complete', () => {
   const state = makeParent();
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
@@ -122,6 +143,19 @@ test('recurring groups advance together after every child task is complete', () 
   tasks.forEach(task => { core.startTask(state, task.id); core.completeTask(state, task.id, task.startedAt); });
   assert.equal(tasks.every(task => !task.completed), true);
   assert.equal(tasks.every(task => task.targetAt === Date.parse('2026-09-25T08:30:00')), true);
+});
+
+test('weekly recurring groups require at least one selected weekday', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+
+  assert.equal(core.addTaskGroup(state, {
+    title: 'Morning routine',
+    tasks: ['Get dressed'],
+    profile: child.id,
+    targetAt: Date.now(),
+    recurrence: { frequency: 'weekly', interval: 1, daysOfWeek: [] }
+  }), null);
 });
 
 test('group tasks can have different minimum durations', () => {

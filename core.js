@@ -65,7 +65,7 @@
     const current = new Date(now);
     return target.getFullYear() < current.getFullYear() || (target.getFullYear() === current.getFullYear() && (target.getMonth() < current.getMonth() || (target.getMonth() === current.getMonth() && target.getDate() <= current.getDate())));
   };
-  const validRecurrence = recurrence => recurrence && ['daily', 'weekly'].includes(recurrence.frequency) && Number.isInteger(recurrence.interval) && recurrence.interval > 0 && Array.isArray(recurrence.daysOfWeek) && recurrence.daysOfWeek.length > 0 && recurrence.daysOfWeek.every(day => Number.isInteger(day) && day >= 0 && day <= 6);
+  const validRecurrence = recurrence => recurrence && ['daily', 'weekly'].includes(recurrence.frequency) && Number.isInteger(recurrence.interval) && recurrence.interval > 0 && Array.isArray(recurrence.daysOfWeek) && recurrence.daysOfWeek.every(day => Number.isInteger(day) && day >= 0 && day <= 6) && (recurrence.frequency === 'daily' || recurrence.daysOfWeek.length > 0);
   const nextTarget = (targetAt, recurrence) => {
     if (recurrence.frequency === 'daily') return targetAt + recurrence.interval * 86400000;
     const date = new Date(targetAt);
