@@ -2,15 +2,28 @@ const STORAGE_KEY = 'daymark-state-v2';
 const Core = window.DaymarkCore;
 let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || Core.createEmptyState();
 let currentView = 'dashboard';
+let startAvailabilityTimer;
+let taskVisibilityTimer;
+const START_WINDOW_MS = 60 * 60 * 1000;
 
 const $ = selector => document.querySelector(selector);
 const profile = () => state.activeProfile ? state.profiles.find(item => item.id === state.activeProfile) : null;
 const save = () => localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 const icon = name => ({ sun:'☼', smile:'◌', home:'⌂', paw:'♧', bag:'□', clock:'◷', spark:'✦', money:'$', check:'✓' }[name] || '•');
 const formatMinutes = started => { const seconds = Math.max(0, Math.floor((Date.now() - started) / 1000)); return `${String(Math.floor(seconds / 60)).padStart(2,'0')}:${String(seconds % 60).padStart(2,'0')}`; };
+const formatRemaining = milliseconds => {
+  const minutes = Math.max(0, Math.ceil(milliseconds / 60000));
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor(minutes % 1440 / 60);
+  const remainingMinutes = minutes % 60;
+  if (days) return `${days}d ${hours}h`;
+  if (hours) return `${hours}h ${remainingMinutes}m`;
+  return `${minutes}m`;
+};
 const formatTarget = targetAt => targetAt ? new Intl.DateTimeFormat(undefined, { dateStyle:'medium', timeStyle:'short' }).format(new Date(targetAt)) : 'No target';
 
 function render() {
+  scheduleTaskVisibility();
   if (!state.setupComplete) {
     $('#welcomeRow').classList.add('hidden');
     $('#mainNav').classList.add('hidden');
@@ -30,6 +43,7 @@ function render() {
   $('#appView').innerHTML = currentView === 'dashboard' ? dashboardView() : currentView === 'tasks' ? tasksView() : currentView === 'rewards' ? rewardsView() : peopleView();
   document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.view === currentView));
   bindDynamicEvents();
+  initializeStartCountdowns();
 }
 
 function setupView() { return `<section class="setup-screen"><div class="setup-ornament">D</div><p class="eyebrow">WELCOME TO DAYMARK</p><h1>Start with the family anchor.</h1><p class="lede">Create the parent profile first. It keeps the family board private and gives you the keys to add children, tasks and rewards.</p><form id="setupForm" class="form-grid setup-form"><div class="form-row"><label for="parentName">Parent name</label><input id="parentName" required placeholder="e.g. Sam"></div><div class="form-row two"><div class="form-row"><label for="parentInitials">Avatar initials</label><input id="parentInitials" maxlength="2" placeholder="SA"></div><div class="form-row"><label for="parentColor">Avatar colour</label><select id="parentColor"><option value="lavender">Lavender</option><option value="sage">Sage</option><option value="coral">Coral</option><option value="sun">Sun</option></select></div></div><div class="form-row"><label for="parentPassword">Parent password</label><input id="parentPassword" type="password" minlength="4" required placeholder="At least 4 characters"></div><div class="form-row"><label for="parentPasswordAgain">Confirm password</label><input id="parentPasswordAgain" type="password" minlength="4" required placeholder="Type it again"></div><button class="primary-button" type="submit">Create parent profile</button></form></section>`; }
@@ -41,7 +55,7 @@ function dashboardView() {
     .filter(child => child.role !== 'Parent profile' && (!active || active.role === 'Parent profile' || child.id === active.id))
     .map(child => ({
       child,
-      tasks: state.tasks.filter(task => task.profile === child.id && !task.completed && Core.isTaskAvailable(task))
+      tasks: state.tasks.filter(task => task.profile === child.id && !task.completed && Core.isTaskAvailable(task) && isWithinStartWindow(task))
     }))
     .filter(group => group.tasks.length);
   return `<div class="section-heading"><h2>${active?.role === 'Standard profile' ? 'Your tasks' : 'Family tasks'}</h2></div>${childTasks.length ? `<div class="child-task-columns">${childTasks.map(({ child, tasks }) => `<section class="child-task-column" aria-label="${child.name}'s tasks"><div class="child-task-heading"><span class="avatar avatar-medium avatar-${child.color}">${child.initials}</span><h3>${child.name}</h3></div><div class="task-list">${tasks.map(task => taskTemplate(task, false)).join('')}</div></section>`).join('')}</div>` : '<div class="empty-state">No outstanding tasks right now.</div>'}`;
@@ -49,12 +63,20 @@ function dashboardView() {
 
 function taskTemplate(task, showMenu = true) {
   const running = Boolean(task.startedAt);
+  const waiting = !running && Number.isFinite(task.notBeforeAt) && Date.now() < task.notBeforeAt;
   const locked = task.min && running && Date.now() - task.startedAt < task.min * 60000;
   const owner = state.profiles.find(item => item.id === task.profile);
-  return `<article class="task-row ${running ? 'running' : ''}" data-task-id="${task.id}"><div class="task-icon ${task.icon === 'home' ? 'coral' : task.icon === 'sun' ? 'yellow' : task.icon === 'smile' ? 'purple' : ''}">${icon(task.icon)}</div><div><div class="task-meta"><p class="task-title">${task.title}</p><span class="task-tag">${task.tag}</span></div><p class="task-subtitle">${task.groupTitle ? `${task.groupTitle} · ` : ''}${task.subtitle}${owner && state.activeProfile === state.parentId ? ` · Assigned to ${owner.name}` : ''}${running ? ` · <span class="timer">${formatMinutes(task.startedAt)} elapsed</span>` : ''}</p></div><div class="task-actions"><span class="task-time">${formatTarget(task.targetAt)}</span>${running ? `<button class="start-button complete" data-action="complete" ${locked ? 'disabled title="Minimum time not reached"' : ''}>Complete</button>` : `<button class="start-button" data-action="start">Start</button>`}${showMenu ? '<button class="menu-button" data-action="menu" aria-label="Task options">···</button>' : ''}</div></article>`;
+  return `<article class="task-row ${running ? 'running' : ''}" data-task-id="${task.id}"><div class="task-icon ${task.icon === 'home' ? 'coral' : task.icon === 'sun' ? 'yellow' : task.icon === 'smile' ? 'purple' : ''}">${icon(task.icon)}</div><div><div class="task-meta"><p class="task-title">${task.title}</p><span class="task-tag">${task.tag}</span></div><p class="task-subtitle">${task.groupTitle ? `${task.groupTitle} · ` : ''}${task.subtitle}${owner && state.activeProfile === state.parentId ? ` · Assigned to ${owner.name}` : ''}${running ? ` · <span class="timer">${formatMinutes(task.startedAt)} elapsed</span>` : ''}</p></div><div class="task-actions"><span class="task-time ${waiting ? 'start-countdown' : ''}" ${waiting ? `data-starts-at="${task.notBeforeAt}"` : ''}>${waiting ? `Starts in ${formatRemaining(task.notBeforeAt - Date.now())}` : formatTarget(task.targetAt)}</span>${running ? `<button class="start-button complete" data-action="complete" ${locked ? 'disabled title="Minimum time not reached"' : ''}>Complete</button>` : `<button class="start-button" data-action="start" ${waiting ? 'disabled title="This task is not ready to start yet"' : ''}>Start</button>`}${showMenu ? '<button class="menu-button" data-action="menu" aria-label="Task options">···</button>' : ''}</div></article>`;
 }
 
-function tasksView() { const active = profile(); const tasks = state.tasks.filter(task => (!state.activeProfile || active?.role === 'Parent profile' || task.profile === state.activeProfile) && Core.isTaskAvailable(task)); return `<div class="section-heading"><h2>All tasks</h2>${active?.role === 'Parent profile' ? '<button class="primary-button" id="inlineAddTask">+ Add task</button>' : ''}</div><div class="task-list">${tasks.length ? tasks.map(task => task.completed ? `<article class="task-row"><div class="task-icon">✓</div><div><p class="task-title">${task.title}</p><p class="task-subtitle">Completed today</p></div><div class="task-actions"><span class="task-tag">Done</span></div></article>` : taskTemplate(task)).join('') : '<div class="empty-state">No tasks have been created yet. The parent can add the family\'s first task.</div>'}</div>`; }
+function tasksView() {
+  const active = profile();
+  const assignedToView = task => !state.activeProfile || active?.role === 'Parent profile' || task.profile === state.activeProfile;
+  const tasks = state.tasks.filter(task => assignedToView(task) && Core.isTaskAvailable(task) && isWithinStartWindow(task));
+  const scheduledLater = state.tasks.some(task => assignedToView(task) && !task.completed && !task.startedAt && Number.isFinite(task.notBeforeAt) && task.notBeforeAt > Date.now() + START_WINDOW_MS);
+  const emptyMessage = scheduledLater ? 'No tasks can be started within the next hour.' : 'No tasks have been created yet. The parent can add the family\'s first task.';
+  return `<div class="section-heading"><h2>All tasks</h2>${active?.role === 'Parent profile' ? '<button class="primary-button" id="inlineAddTask">+ Add task</button>' : ''}</div><div class="task-list">${tasks.length ? tasks.map(task => task.completed ? `<article class="task-row"><div class="task-icon">✓</div><div><p class="task-title">${task.title}</p><p class="task-subtitle">Completed today</p></div><div class="task-actions"><span class="task-tag">Done</span></div></article>` : taskTemplate(task)).join('') : `<div class="empty-state">${emptyMessage}</div>`}</div>`;
+}
 function rewardsView() { return `<div class="section-heading"><div><h2>Rewards shop</h2><p class="lede">Trade your progress for things that feel good.</p></div>${profile()?.role === 'Parent profile' ? '<button class="primary-button" id="editRewards">Manage rewards</button>' : ''}</div>${state.rewards.length ? `<div class="reward-grid">${state.rewards.map(reward => `<article class="reward-card"><div class="task-icon">${icon(reward.icon)}</div><h3>${reward.name}</h3><p>${reward.description}</p><span class="reward-cost">${reward.cost} ${reward.kind}</span><button class="section-action" data-redeem="${reward.name}">Redeem →</button></article>`).join('')}</div>` : '<div class="empty-state">No rewards have been created yet. The parent can add rewards when the family is ready.</div>'}`; }
 function peopleView() { const active = profile(); return `<div class="section-heading"><div><h2>People</h2><p class="lede">Manage who is part of your family board.</p></div>${active?.role === 'Parent profile' ? '<button class="primary-button" id="addProfile">+ Add child</button>' : ''}</div><div class="people-grid">${state.profiles.map(person => `<article class="person-card"><span class="avatar avatar-medium avatar-${person.color}">${person.initials}</span><div class="person-info"><div class="person-name">${person.name}</div><div class="person-role">${person.role}</div></div><span class="person-points">${person.points} pts</span></article>`).join('')}</div>`; }
 
@@ -66,6 +88,53 @@ function profileForm() { return `<h2 id="modalTitle">Create a child account</h2>
 function authenticateView(profileId) { const selected = state.profiles.find(item => item.id === profileId); return `<h2 id="modalTitle">${selected.name} is checking in</h2><p class="modal-intro">Enter the ${selected.role === 'Parent profile' ? 'parent password' : 'child PIN'} to open this profile.</p><form id="authForm" class="form-grid"><input type="hidden" id="authProfile" value="${profileId}"><div class="form-row"><label for="credential">${selected.role === 'Parent profile' ? 'Password' : 'PIN'}</label><input id="credential" type="password" required autofocus></div><div class="form-footer"><button type="button" class="secondary-button" id="cancelModal">Cancel</button><button class="primary-button">Check in</button></div></form>`; }
 
 function bindDynamicEvents() { document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', () => taskAction(button))); document.querySelectorAll('[data-view-target]').forEach(button => button.addEventListener('click', () => { currentView='tasks'; render(); })); document.querySelectorAll('[data-redeem]').forEach(button => button.addEventListener('click', () => toast(`${button.dataset.redeem} saved to your wishlist.`))); $('#inlineAddTask')?.addEventListener('click', () => showModal(taskForm())); $('#addProfile')?.addEventListener('click', () => showModal(profileForm())); $('#editRewards')?.addEventListener('click', () => toast('Reward editing is ready for your parent profile.')); $('#taskType')?.addEventListener('change', updateTaskForm); }
+function refreshStartCountdown(countdown) {
+  if (!countdown.isConnected) return;
+  const remaining = Number(countdown.dataset.startsAt) - Date.now();
+  const button = countdown.closest('.task-row')?.querySelector('[data-action="start"]');
+  if (remaining <= 0) {
+    countdown.textContent = 'Ready now';
+    if (button) {
+      button.disabled = false;
+      button.removeAttribute('title');
+    }
+  } else {
+    countdown.textContent = `Starts in ${formatRemaining(remaining)}`;
+  }
+}
+function isWithinStartWindow(task) {
+  return task.startedAt || task.completed || !Number.isFinite(task.notBeforeAt) || task.notBeforeAt <= Date.now() + START_WINDOW_MS;
+}
+function scheduleTaskVisibility() {
+  clearTimeout(taskVisibilityTimer);
+  const now = Date.now();
+  const nextVisibleAt = state.tasks
+    .filter(task => !task.completed && !task.startedAt && Number.isFinite(task.notBeforeAt))
+    .map(task => task.notBeforeAt - START_WINDOW_MS)
+    .filter(visibleAt => visibleAt > now)
+    .sort((first, second) => first - second)[0];
+  if (!nextVisibleAt) return;
+  taskVisibilityTimer = setTimeout(render, Math.min(nextVisibleAt - now, 2147483647));
+}
+function scheduleStartAvailability() {
+  clearTimeout(startAvailabilityTimer);
+  const now = Date.now();
+  const nextStartAt = [...document.querySelectorAll('.start-countdown')]
+    .map(countdown => Number(countdown.dataset.startsAt))
+    .filter(startAt => startAt > now)
+    .sort((first, second) => first - second)[0];
+  if (!nextStartAt) return;
+  startAvailabilityTimer = setTimeout(() => {
+    document.querySelectorAll('.start-countdown').forEach(refreshStartCountdown);
+    scheduleStartAvailability();
+  }, Math.min(nextStartAt - now, 2147483647));
+}
+function initializeStartCountdowns() {
+  document.querySelectorAll('.start-countdown').forEach(countdown => {
+    refreshStartCountdown(countdown);
+  });
+  scheduleStartAvailability();
+}
 function taskAction(button) { const taskId = button.closest('[data-task-id]').dataset.taskId; const task = state.tasks.find(item => String(item.id) === taskId); const action = button.dataset.action; if ((!state.activeProfile || state.activeProfile === state.parentId) && task?.profile !== state.parentId) return showModal(taskAuthForm(task, action)); if (action === 'start') { if (!Core.startTask(state, taskId)) return toast('Only the assigned profile can start this task.'); toast(`${task.title} started.`); } else if (action === 'complete') { if (!Core.completeTask(state, taskId)) return toast('The minimum time has not been reached yet.'); toast('Great work. +20 points and +2 coins.'); } else { toast('Task options will be available in the next update.'); } save(); render(); }
 function taskAuthForm(task, action) { const child = state.profiles.find(profileItem => profileItem.id === task.profile); return `<h2 id="modalTitle">${action === 'start' ? 'Start' : 'Complete'} ${task.title}</h2><p class="modal-intro">Enter ${child.name}'s PIN to record this task for them.</p><form id="taskAuthForm" class="form-grid"><input type="hidden" id="taskAuthId" value="${task.id}"><input type="hidden" id="taskAuthAction" value="${action}"><div class="form-row"><label for="taskCredential">${child.name}'s PIN</label><input id="taskCredential" type="password" inputmode="numeric" required autofocus></div><div class="form-footer"><button type="button" class="secondary-button" id="cancelModal">Cancel</button><button class="primary-button">${action === 'start' ? 'Start task' : 'Complete task'}</button></div></form>`; }
 function toast(message) { const element = $('#toast'); element.textContent = message; element.classList.remove('hidden'); setTimeout(() => element.classList.add('hidden'), 2600); }
@@ -78,5 +147,14 @@ document.addEventListener('click', event => { if (event.target.id === 'cancelMod
 document.addEventListener('click', event => { const profileButton = event.target.closest('[data-profile]'); const authButton = event.target.closest('[data-auth-profile]'); if (profileButton) { Core.logout(state); save(); closeModal(); render(); } if (authButton) showModal(authenticateView(authButton.dataset.authProfile)); });
 document.addEventListener('submit', event => { if (event.target.id !== 'taskAuthForm') return; event.preventDefault(); const taskId = $('#taskAuthId').value; const action = $('#taskAuthAction').value; const profileId = Core.authenticateTask(state, taskId, $('#taskCredential').value); if (!profileId) return toast('That PIN did not match.'); const updated = action === 'start' ? Core.startTask(state, taskId, profileId) : Core.completeTask(state, taskId, Date.now(), profileId); if (!updated) return toast(action === 'start' ? 'This task cannot be started yet.' : 'The minimum time has not been reached yet.'); save(); closeModal(); render(); toast(action === 'start' ? 'Task started.' : 'Great work. +20 points and +2 coins.'); });
 document.addEventListener('submit', event => { if (event.target.id === 'authForm') { event.preventDefault(); if (!Core.authenticate(state, $('#authProfile').value, $('#credential').value)) return toast('That credential did not match.'); save(); closeModal(); render(); toast(`Checked in as ${profile().name}.`); } if (event.target.id === 'taskForm') { event.preventDefault(); const type = $('#taskType').value; const grouped = type === 'group' || type === 'recurring-group'; const recurring = type === 'recurring' || type === 'recurring-group'; const targetAt = Date.parse(grouped ? $('#groupTarget').value : $('#taskTarget').value); const notBeforeValue = grouped ? $('#groupNotBefore').value : $('#taskNotBefore').value; const notBeforeAt = notBeforeValue ? Date.parse(notBeforeValue) : null; const recurrence = recurring ? { frequency:$('#taskFrequency').value, interval:Number($('#taskInterval').value) || 0, daysOfWeek:[...document.querySelectorAll('[name="taskDay"]:checked')].map(input => Number(input.value)) } : null; const groupTasks = $('#groupTasks').value.split(/\n/).map(line => { const [title, minimum] = line.split('|'); return { title, min:Number(minimum) || 0 }; }); const task = grouped ? Core.addTaskGroup(state, { title:$('#taskName').value, tasks:groupTasks, profile:$('#taskProfile').value, targetAt, notBeforeAt, recurrence, min:Number($('#taskMin').value) || 0 }) : Core.addTask(state, { id:Date.now(), title:$('#taskName').value, subtitle:recurring ? 'Repeats on your schedule' : 'Added today', type, icon:'home', tag:type === 'adhoc' ? 'Ad hoc' : 'Recurring', profile:$('#taskProfile').value, due:$('#taskDue').value || 'Today', targetAt, notBeforeAt, recurrence, min:Number($('#taskMin').value) || 0 }); if (!task) return toast('Only the parent can add tasks with a valid schedule and time window.'); save(); closeModal(); render(); toast(grouped ? 'Task group added to the board.' : 'Task added to the board.'); } if (event.target.id === 'profileForm') { event.preventDefault(); const child = Core.addChild(state, { name:$('#profileName').value, pin:$('#profilePin').value, initials:$('#profileInitials').value, color:$('#profileColor').value }); if (!child) return toast('Use a name and a PIN of at least 4 characters.'); save(); closeModal(); render(); toast(`${child.name} now has a profile.`); } });
-setInterval(() => { document.querySelectorAll('.running').forEach(row => { const task = state.tasks.find(item => String(item.id) === row.dataset.taskId); const timer = row.querySelector('.timer'); if (task?.startedAt && timer) timer.textContent = `${formatMinutes(task.startedAt)} elapsed`; }); }, 1000);
+setInterval(() => {
+  document.querySelectorAll('.running').forEach(row => {
+    const task = state.tasks.find(item => String(item.id) === row.dataset.taskId);
+    const timer = row.querySelector('.timer');
+    if (task?.startedAt && timer) timer.textContent = `${formatMinutes(task.startedAt)} elapsed`;
+  });
+}, 1000);
+setInterval(() => {
+  document.querySelectorAll('.start-countdown').forEach(refreshStartCountdown);
+}, 60000);
 render();
