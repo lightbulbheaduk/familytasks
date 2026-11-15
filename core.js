@@ -38,6 +38,14 @@
     state.profiles.push(child);
     return child;
   };
+  const removeChild = (state, profileId) => {
+    const child = state.profiles.find(profile => profile.id === profileId && profile.role !== 'Parent profile');
+    if (!canManage(state) || !child) return false;
+    state.profiles = state.profiles.filter(profile => profile.id !== profileId);
+    state.tasks = state.tasks.filter(task => task.profile !== profileId);
+    if (state.activeProfile === profileId) state.activeProfile = null;
+    return true;
+  };
 
   const authenticate = (state, profileId, credential) => {
     const profile = state.profiles.find(item => item.id === profileId);
@@ -82,6 +90,13 @@
     const created = { id: task.id || Date.now(), subtitle: task.subtitle || 'Added today', icon: task.icon || 'home', tag: task.tag || 'Ad hoc', due: task.due || 'Today', targetAt: null, notBeforeAt: null, recurrence: null, completionHistory: [], completed: false, startedAt: null, completedAt: null, min: Number(task.min) || 0, ...task };
     state.tasks.unshift(created);
     return created;
+  };
+  const removeTask = (state, taskId) => {
+    if (!canManage(state)) return false;
+    const taskIndex = state.tasks.findIndex(task => String(task.id) === String(taskId));
+    if (taskIndex < 0) return false;
+    state.tasks.splice(taskIndex, 1);
+    return true;
   };
 
   const addTaskGroup = (state, { title, tasks, profile, targetAt, notBeforeAt = null, recurrence = null, min = 0 }) => {
@@ -144,5 +159,5 @@
     return true;
   };
 
-  return { hashCredential, createEmptyState, setupParent, addChild, authenticate, authenticateTask, logout, isParent, canManage, canComplete, isTaskAvailable, addTask, addTaskGroup, startTask, completeTask };
+  return { hashCredential, createEmptyState, setupParent, addChild, removeChild, authenticate, authenticateTask, logout, isParent, canManage, canComplete, isTaskAvailable, addTask, removeTask, addTaskGroup, startTask, completeTask };
 });

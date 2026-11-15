@@ -46,6 +46,34 @@ test('parent can create child accounts with zero progress', () => {
   assert.equal(core.authenticate(state, child.id, '0000'), false);
 });
 
+test('parent can delete a child and their assigned tasks', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const other = core.addChild(state, { name: 'Riley', pin: '1357' });
+  state.tasks.push(
+    { id: 'jamie-task', profile: child.id },
+    { id: 'riley-task', profile: other.id }
+  );
+
+  assert.equal(core.removeChild(state, child.id), true);
+  assert.deepEqual(state.profiles.map(profile => profile.id), ['parent', other.id]);
+  assert.deepEqual(state.tasks.map(task => task.id), ['riley-task']);
+  assert.equal(core.removeChild(state, 'parent'), false);
+});
+
+test('children cannot delete profiles or tasks', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const task = { id: 'task-1', profile: child.id };
+  state.tasks.push(task);
+  core.authenticate(state, child.id, '2468');
+
+  assert.equal(core.removeChild(state, child.id), false);
+  assert.equal(core.removeTask(state, task.id), false);
+  assert.equal(state.profiles.length, 2);
+  assert.equal(state.tasks.length, 1);
+});
+
 test('child accounts cannot create tasks', () => {
   const state = makeParent();
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
@@ -66,6 +94,16 @@ test('parent can create tasks assigned to a child', () => {
   assert.equal(task.completedAt, null);
   assert.equal(task.targetAt, targetAt);
   assert.equal(task.min, 2);
+});
+
+test('parent can delete a task', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const task = core.addTask(state, { title: 'Brush teeth', profile: child.id, targetAt: Date.now() });
+
+  assert.equal(core.removeTask(state, task.id), true);
+  assert.equal(state.tasks.length, 0);
+  assert.equal(core.removeTask(state, task.id), false);
 });
 
 test('only the assigned child can start and complete a task', () => {
