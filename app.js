@@ -4,6 +4,7 @@ let state = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || Core.crea
 let currentView = 'dashboard';
 let startAvailabilityTimer;
 let taskVisibilityTimer;
+let deferredInstallPrompt = null;
 const START_WINDOW_MS = 60 * 60 * 1000;
 
 const $ = selector => document.querySelector(selector);
@@ -97,6 +98,21 @@ function peopleView() { const active = profile(); const isParent = active?.role 
 
 function showModal(content) { $('#modalContent').innerHTML = content; $('#modalBackdrop').classList.remove('hidden'); updateTaskForm(); $('#modalContent [autofocus]')?.focus(); $('#taskType')?.addEventListener('change', updateTaskForm); }
 function closeModal() { $('#modalBackdrop').classList.add('hidden'); }
+function isInstalled() { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; }
+function installHelp() { return `<h2 id="modalTitle">Install Daymark</h2><p class="modal-intro">Keep the family board handy from your home screen. Installation is available when Daymark is served over HTTPS (or from localhost while developing).</p><ol><li><strong>Chrome or Edge:</strong> choose <em>Install Daymark</em> or <em>Install app</em> from the browser menu or address bar.</li><li><strong>iPhone or iPad:</strong> open this page in Safari, tap Share, choose <em>Add to Home Screen</em>, then tap Add.</li><li><strong>Android:</strong> in Chrome, tap Install app when offered, or choose <em>Install app</em> or <em>Add to Home screen</em> from the browser menu.</li></ol><p class="modal-intro">Open Daymark once while online so its app files can be cached for offline use.</p>`; }
+async function installApp() {
+  if (!deferredInstallPrompt) return showModal(installHelp());
+  const prompt = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  try {
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    if (choice.outcome === 'accepted') $('#installButton').classList.add('hidden');
+  } catch (error) {
+    console.error('Daymark installation prompt failed:', error);
+    toast('Could not open the install prompt. Try the browser menu instead.');
+  }
+}
 function taskForm() { return `<h2 id="modalTitle">Add a task</h2><p class="modal-intro">Make the next step clear and achievable.</p><form id="taskForm" class="form-grid"><div class="form-row"><label for="taskName">Task name</label><input id="taskName" placeholder="e.g. Put away washing" required><small class="form-help">For a group, use the group name here.</small></div><div class="form-row two"><div class="form-row"><label for="taskType">Type</label><select id="taskType"><option value="adhoc">Ad hoc</option><option value="recurring">Recurring</option><option value="group">Task group</option><option value="recurring-group">Recurring task group</option></select></div><div class="form-row"><label for="taskProfile">For</label><select id="taskProfile">${state.profiles.filter(p => p.role !== 'Parent profile').map(p => `<option value="${p.id}">${p.name}</option>`).join('')}</select></div></div><div id="singleTaskFields"><div class="form-row two"><div class="form-row"><label for="taskDue">Due</label><input id="taskDue" placeholder="Today or 8:30 AM"></div><div class="form-row"><label for="taskTarget">Target completion</label><input id="taskTarget" type="datetime-local"></div></div><div class="form-row"><label for="taskNotBefore">Should not be completed before</label><input id="taskNotBefore" type="datetime-local"><small class="form-help">Leave blank if it can be started at any time.</small></div></div><div id="groupTaskFields" class="hidden"><div class="form-row"><label for="groupTasks">Tasks in this group</label><textarea id="groupTasks" rows="4" placeholder="Get dressed | 0\nBrush hair | 0\nBrush teeth | 2"></textarea><small class="form-help">Add one task per line as name | minimum minutes. The group shares one target time.</small></div><div class="form-row"><label for="groupTarget">Group target completion</label><input id="groupTarget" type="datetime-local"></div><div class="form-row"><label for="groupNotBefore">Group should not be completed before</label><input id="groupNotBefore" type="datetime-local"></div></div><div id="scheduleFields" class="hidden"><div class="form-row two"><div class="form-row"><label for="taskFrequency">Repeat</label><select id="taskFrequency"><option value="weekly">Every week</option><option value="daily">Every day</option></select></div><div class="form-row"><label for="taskInterval">Every</label><input id="taskInterval" type="number" min="1" value="1"><small class="form-help">Weeks or days, based on Repeat.</small></div></div><div class="form-row"><span class="form-label">Days of the week</span><div class="weekday-options"><label><input type="checkbox" name="taskDay" value="1" checked> Mon</label><label><input type="checkbox" name="taskDay" value="2" checked> Tue</label><label><input type="checkbox" name="taskDay" value="3" checked> Wed</label><label><input type="checkbox" name="taskDay" value="4" checked> Thu</label><label><input type="checkbox" name="taskDay" value="5" checked> Fri</label><label><input type="checkbox" name="taskDay" value="6"> Sat</label><label><input type="checkbox" name="taskDay" value="0"> Sun</label></div></div></div><div class="form-row"><label for="taskMin">Minimum minutes</label><input id="taskMin" type="number" min="0" value="0"></div><div class="form-footer"><button type="button" class="secondary-button" id="cancelModal">Cancel</button><button class="primary-button">Create task</button></div></form>`; }
 function updateTaskForm() { const type = $('#taskType')?.value; const grouped = type === 'group' || type === 'recurring-group'; const recurring = type === 'recurring' || type === 'recurring-group'; $('#singleTaskFields')?.classList.toggle('hidden', grouped); $('#groupTaskFields')?.classList.toggle('hidden', !grouped); $('#scheduleFields')?.classList.toggle('hidden', !recurring); $('#taskTarget')?.toggleAttribute('required', !grouped); $('#groupTasks')?.toggleAttribute('required', grouped); $('#groupTarget')?.toggleAttribute('required', grouped); }
 function profileForm() { return `<h2 id="modalTitle">Create a child account</h2><p class="modal-intro">Give them a short PIN they can use to check in quickly.</p><form id="profileForm" class="form-grid"><div class="form-row"><label for="profileName">Name</label><input id="profileName" required placeholder="e.g. Jamie"></div><div class="form-row two"><div class="form-row"><label for="profileInitials">Avatar initials</label><input id="profileInitials" maxlength="2" placeholder="JA"></div><div class="form-row"><label for="profileColor">Avatar colour</label><select id="profileColor"><option value="sage">Sage</option><option value="coral">Coral</option><option value="lavender">Lavender</option><option value="sun">Sun</option></select></div></div><div class="form-row"><label for="profilePin">Child PIN</label><input id="profilePin" type="password" minlength="4" inputmode="numeric" required placeholder="At least 4 digits"></div><div class="form-footer"><button type="button" class="secondary-button" id="cancelModal">Cancel</button><button class="primary-button">Create child account</button></div></form>`; }
@@ -155,6 +171,18 @@ function taskAuthForm(task, action) { const child = state.profiles.find(profileI
 function toast(message) { const element = $('#toast'); element.textContent = message; element.classList.remove('hidden'); setTimeout(() => element.classList.add('hidden'), 2600); }
 
 document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => { currentView = tab.dataset.view; render(); }));
+$('#installButton').addEventListener('click', installApp);
+if (isInstalled()) $('#installButton').classList.add('hidden');
+window.addEventListener('beforeinstallprompt', event => {
+  if (isInstalled()) return;
+  event.preventDefault();
+  deferredInstallPrompt = event;
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  $('#installButton').classList.add('hidden');
+  toast('Daymark installed.');
+});
 $('#addTaskButton').addEventListener('click', () => showModal(taskForm()));
 $('#profileButton').addEventListener('click', () => showModal(`<h2 id="modalTitle">Who is checking in?</h2><p class="modal-intro">Choose a profile to see personal tasks, or stay on the family board.</p><div class="profile-options"><button class="profile-option" data-profile="overview"><span class="avatar avatar-medium avatar-sun">FB</span><span><strong>Family board</strong><small>Overview, no profile selected</small></span></button>${state.profiles.map(p => `<button class="profile-option" data-auth-profile="${p.id}"><span class="avatar avatar-medium avatar-${p.color}">${p.initials}</span><span><strong>${p.name}</strong><small>${p.role}</small></span></button>`).join('')}</div>`));
 $('#settingsButton').addEventListener('click', () => toast('Your data stays on this device.')); $('#modalClose').addEventListener('click', closeModal); $('#modalBackdrop').addEventListener('click', event => { if (event.target.id === 'modalBackdrop') closeModal(); });

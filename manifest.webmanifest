@@ -1,9 +1,25 @@
 {
   "name": "Daymark | Family tasks",
   "short_name": "Daymark",
-  "start_url": ".",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#fff8ef",
   "theme_color": "#fff8ef",
-  "description": "A local-first family task and reward board."
+  "description": "A local-first family task and reward board.",
+  "icons": [
+    {
+      "src": "assets/daymark-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/daymark-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
 }

@@ -11,7 +11,7 @@ Daymark is a local-first progressive web app for organizing family tasks and cel
 - **Task actions:** A child can start and complete only their assigned tasks. From the family board or parent view, the parent can record a task action by entering that child's PIN without switching profiles.
 - **Progress:** Each task completion awards 20 points and 2 coins. Recurring tasks retain completion history and advance to their next occurrence; a recurring group advances together after all its items are complete.
 - **Stats:** Each child has a Stats view showing wins and points in the last seven days, active days, a current streak, all-time wins, and a seven-day activity chart. The family board and parent view show stats for all children. Older task completion records are used to populate history where possible.
-- **Local-first PWA:** State is stored in browser `localStorage`; the service worker caches the app shell for offline use. The responsive interface is designed to work on tablets in portrait orientation.
+- **Local-first PWA:** Install Daymark from a supported browser or add it to an iPhone/iPad Home Screen. State is stored in browser `localStorage`; the service worker caches the app shell for offline use. The responsive interface is designed to work on tablets in portrait orientation.
 
 There are no preloaded profiles, tasks, or rewards on a fresh install.
 
@@ -22,6 +22,20 @@ There are no preloaded profiles, tasks, or rewards on a fresh install.
 3. Use **Add task** to create and assign tasks, groups, or schedules.
 4. Choose a child in the profile menu and enter their PIN to check in. They can start and complete their assigned tasks.
 5. Return to the family board from the profile menu to see children's tasks together, or open **Stats** to review progress.
+
+## Installing Daymark
+
+Daymark can be installed from its published GitHub Pages site or from a local development server. The site must be opened over **HTTPS**; `http://localhost` is also allowed for development. Opening `index.html` directly as a `file://` URL will not enable installation or offline support.
+
+1. Open the Daymark site in a supported browser and let it load once while online. This registers the service worker and caches the app shell.
+2. Select **Install app** in the Daymark header. If the browser provides an install prompt, confirm it.
+3. If the button shows browser-specific instructions instead, use the browser's own install option:
+   - **Chrome or Edge on desktop:** choose **Install Daymark** (or **Install app**) from the browser menu or address bar.
+   - **Chrome on Android:** choose **Install app** or **Add to Home screen** from the browser menu.
+   - **Safari on iPhone or iPad:** tap **Share**, choose **Add to Home Screen**, then tap **Add**.
+4. Open Daymark from the new desktop shortcut or home-screen icon. After the first online visit and successful service-worker installation, the app shell can load offline.
+
+The install control is hidden when Daymark is already running as an installed app. Installation does not create an account or sync data: app data remains local to that browser/device. Browser wording and availability vary, and some browsers offer installation only through their own menu.
 
 ## Current limitations
 
@@ -44,7 +58,7 @@ npm test
 npm run check
 ```
 
-`npm test` runs the domain tests in `tests/core.test.js` with Node's built-in test runner. They cover:
+`npm test` runs domain tests in `tests/core.test.js` and PWA manifest/icon checks in `tests/pwa.test.js` with Node's built-in test runner. The tests cover:
 
 - Fresh state, parent setup validation, password hashing, and profile authentication.
 - Parent-only child/task management and assigned-child task permissions.
@@ -52,10 +66,11 @@ npm run check
 - Earliest-start and recurring-day start boundaries, minimum completion durations, and task availability.
 - Task-group timing, per-item minimums, daily/weekly recurrence, intervals, and recurring-group advancement.
 - Completion points/coins and stats calculations, including legacy history and weekly activity.
+- PWA standalone/install metadata and the required 192px and 512px icons.
 
 `npm run check` syntax-checks `core.js`, `app.js`, and `sw.js`. GitHub Actions runs both commands on pushes and pull requests.
 
-There are no automated browser/UI, accessibility, install, or offline smoke tests yet. Before a v0.1 release, manually verify first-run setup, parent and child check-in, family-board actions with a child PIN, task timing/countdowns, task and child deletion, stats in family and child views, and the app at tablet portrait size. Also test a fresh install and offline reload in a browser; clear or unregister the service worker when checking cache updates.
+There are no automated browser/UI, accessibility, or end-to-end install/offline tests yet; the install test checks manifest resources, not browser behavior. Before a v0.1 release, manually verify first-run setup, parent and child check-in, family-board actions with a child PIN, task timing/countdowns, task and child deletion, stats in family and child views, and the app at tablet portrait size. Test installation from the header and browser menus, including Safari's Add to Home Screen flow, then test an offline reload after the service worker has installed. Clear or unregister the service worker when checking cache updates.
 
 To serve the app locally:
 
@@ -79,7 +94,9 @@ The app is compatible with GitHub Pages. `.github/workflows/deploy.yml` runs tes
 | `app.js` | Rendering, forms, interactions, and local persistence |
 | `manifest.webmanifest` | PWA install metadata |
 | `sw.js` | Offline app-shell cache |
+| `assets/daymark-icon.svg`, `assets/daymark-*.png` | Browser, install, and home-screen icons |
 | `tests/core.test.js` | Domain and permission tests |
+| `tests/pwa.test.js` | Install manifest and icon validation |
 | `.github/workflows/test.yml` | Continuous integration |
 | `.github/workflows/deploy.yml` | GitHub Pages deployment |
 
