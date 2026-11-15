@@ -1,4 +1,4 @@
-const CACHE_NAME = 'daymark-shell-v1';
+const CACHE_NAME = 'daymark-shell-v2';
 const APP_SHELL = ['/', '/index.html', '/styles.css', '/core.js', '/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', event => {

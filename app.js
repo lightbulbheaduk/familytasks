@@ -37,7 +37,6 @@ function render() {
   $('#activeProfileLabel').textContent = active ? active.name : 'Family board';
   $('#profileButton .avatar').className = `avatar avatar-small ${active ? `avatar-${active.color}` : 'avatar-sun'}`;
   $('#profileButton .avatar').textContent = active ? active.initials : 'FB';
-  $('#greeting').textContent = active ? `Good morning, ${active.name}.` : 'Family board overview.';
   $('#addTaskButton').classList.toggle('hidden', !active || active.role !== 'Parent profile');
   $('#dateLabel').textContent = new Intl.DateTimeFormat('en-GB',{weekday:'long',month:'long',day:'numeric'}).format(new Date()).toUpperCase();
   $('#appView').innerHTML = currentView === 'dashboard' ? dashboardView() : currentView === 'tasks' ? tasksView() : currentView === 'rewards' ? rewardsView() : peopleView();

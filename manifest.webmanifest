@@ -3,7 +3,7 @@
   "short_name": "Daymark",
   "start_url": ".",
   "display": "standalone",
-  "background_color": "#fbfcf8",
-  "theme_color": "#21302d",
+  "background_color": "#fff8ef",
+  "theme_color": "#fff8ef",
   "description": "A local-first family task and reward board."
 }
