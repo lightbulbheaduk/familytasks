@@ -46,6 +46,69 @@ test('parent can create child accounts with zero progress', () => {
   assert.equal(core.authenticate(state, child.id, '0000'), false);
 });
 
+test('only the parent can create child accounts', () => {
+  const state = makeParent();
+  core.logout(state);
+  assert.equal(core.addChild(state, { name: 'Jamie', pin: '2468' }), null);
+
+  core.authenticate(state, 'parent', 'parent-pass');
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  core.authenticate(state, child.id, '2468');
+  assert.equal(core.addChild(state, { name: 'Riley', pin: '1357' }), null);
+  assert.equal(state.profiles.length, 2);
+});
+
+test('task history records new completions and reads legacy completion records', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  state.tasks.push(
+    { id: 'legacy-recurring', profile: child.id, title: 'Read', completionHistory: [{ completedAt: 100 }] },
+    { id: 'legacy-completed', profile: child.id, title: 'Tidy up', completed: true, completedAt: 200 }
+  );
+  const task = core.addTask(state, { title: 'Make bed', profile: child.id, targetAt: 1000 });
+  task.startedAt = 300;
+  core.authenticate(state, child.id, '2468');
+
+  assert.equal(core.completeTask(state, task.id, 1000), true);
+  assert.deepEqual(core.getTaskHistory(state, child.id), [
+    { taskId: 'legacy-recurring', title: 'Read', groupTitle: null, completedAt: 100, points: 20, coins: 2 },
+    { taskId: 'legacy-completed', title: 'Tidy up', groupTitle: null, completedAt: 200, points: 20, coins: 2 },
+    { taskId: task.id, title: 'Make bed', groupTitle: null, completedAt: 1000, points: 20, coins: 2 }
+  ]);
+  core.authenticate(state, 'parent', 'parent-pass');
+  assert.equal(core.removeTask(state, task.id), true);
+  assert.equal(core.getTaskHistory(state, child.id).length, 3);
+});
+
+test('task stats summarize weekly wins, active days, streaks, and lifetime wins', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const now = new Date(2026, 10, 15, 12).getTime();
+  child.taskHistory = [
+    { taskId: 'old-win', title: 'Read', completedAt: new Date(2026, 10, 1, 12).getTime(), points: 20 },
+    { taskId: 'friday-win', title: 'Tidy up', completedAt: new Date(2026, 10, 13, 12).getTime(), points: 20 },
+    { taskId: 'saturday-win', title: 'Make bed', completedAt: new Date(2026, 10, 14, 12).getTime(), points: 20 },
+    { taskId: 'sunday-win', title: 'Brush teeth', completedAt: new Date(2026, 10, 15, 12).getTime(), points: 20 }
+  ];
+
+  assert.deepEqual(core.getTaskStats(state, child.id, now), {
+    dailyWins: [
+      { date: new Date(2026, 10, 9).getTime(), count: 0 },
+      { date: new Date(2026, 10, 10).getTime(), count: 0 },
+      { date: new Date(2026, 10, 11).getTime(), count: 0 },
+      { date: new Date(2026, 10, 12).getTime(), count: 0 },
+      { date: new Date(2026, 10, 13).getTime(), count: 1 },
+      { date: new Date(2026, 10, 14).getTime(), count: 1 },
+      { date: new Date(2026, 10, 15).getTime(), count: 1 }
+    ],
+    winsLast7Days: 3,
+    pointsLast7Days: 60,
+    activeDays: 3,
+    currentStreak: 3,
+    allTimeWins: 4
+  });
+});
+
 test('parent can delete a child and their assigned tasks', () => {
   const state = makeParent();
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
@@ -79,6 +142,7 @@ test('child accounts cannot create tasks', () => {
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
   core.authenticate(state, child.id, '2468');
   assert.equal(core.addTask(state, { title: 'Brush teeth', profile: child.id }), null);
+  assert.equal(core.addTaskGroup(state, { title: 'Routine', tasks: ['Brush teeth'], profile: child.id, targetAt: Date.now() }), null);
   assert.equal(state.tasks.length, 0);
 });
 
@@ -183,6 +247,23 @@ test('recurring groups advance together after every child task is complete', () 
   assert.equal(tasks.every(task => task.targetAt === Date.parse('2026-09-25T08:30:00')), true);
 });
 
+test('weekly recurrence intervals skip the inactive weeks', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const targetAt = Date.parse('2026-09-18T08:30:00');
+  const task = core.addTask(state, {
+    title: 'Vacuum',
+    profile: child.id,
+    targetAt,
+    recurrence: { frequency: 'weekly', interval: 2, daysOfWeek: [5] }
+  });
+  task.startedAt = targetAt;
+  core.authenticate(state, child.id, '2468');
+
+  assert.equal(core.completeTask(state, task.id, targetAt + 1000), true);
+  assert.equal(task.targetAt, Date.parse('2026-10-02T08:30:00'));
+});
+
 test('weekly recurring groups require at least one selected weekday', () => {
   const state = makeParent();
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
@@ -237,8 +318,25 @@ test('recurring tasks are unavailable until their target calendar day', () => {
 test('tasks cannot start before their not-before time', () => {
   const state = makeParent();
   const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
-  const notBeforeAt = Date.now() + 60000;
+  const notBeforeAt = Date.now();
   const task = core.addTask(state, { title: 'Wake up', profile: child.id, targetAt: notBeforeAt + 3600000, notBeforeAt });
   core.authenticate(state, child.id, '2468');
-  assert.equal(core.startTask(state, task.id), false);
+  assert.equal(core.startTask(state, task.id, child.id, notBeforeAt - 1), false);
+  assert.equal(core.startTask(state, task.id, child.id, notBeforeAt), true);
+});
+
+test('recurring tasks cannot start before their target calendar day', () => {
+  const state = makeParent();
+  const child = core.addChild(state, { name: 'Jamie', pin: '2468' });
+  const targetAt = Date.parse('2026-09-19T08:30:00');
+  const task = core.addTask(state, {
+    title: 'Vacuum',
+    profile: child.id,
+    targetAt,
+    recurrence: { frequency: 'weekly', interval: 1, daysOfWeek: [6] }
+  });
+  core.authenticate(state, child.id, '2468');
+
+  assert.equal(core.startTask(state, task.id, child.id, Date.parse('2026-09-18T23:59:59')), false);
+  assert.equal(core.startTask(state, task.id, child.id, Date.parse('2026-09-19T00:00:00')), true);
 });

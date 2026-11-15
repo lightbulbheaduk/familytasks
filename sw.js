@@ -1,4 +1,4 @@
-const CACHE_NAME = 'daymark-shell-v2';
+const CACHE_NAME = 'daymark-shell-v3';
 const APP_SHELL = ['/', '/index.html', '/styles.css', '/core.js', '/app.js', '/manifest.webmanifest'];
 
 self.addEventListener('install', event => {
@@ -7,7 +7,14 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    Promise.all([
+      caches.keys().then(keys => Promise.all(
+        keys.filter(key => key.startsWith('daymark-shell-') && key !== CACHE_NAME).map(key => caches.delete(key))
+      )),
+      self.clients.claim()
+    ])
+  );
 });
 
 self.addEventListener('fetch', event => {
